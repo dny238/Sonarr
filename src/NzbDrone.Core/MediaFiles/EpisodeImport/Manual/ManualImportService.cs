@@ -239,6 +239,13 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
                     continue;
                 }
 
+                // Same as import, don't remove what may be an unextracted download
+                if (_diskProvider.GetFiles(releaseFolder, true).Any(f => Path.GetExtension(f).Equals(".rar", StringComparison.OrdinalIgnoreCase) && _diskProvider.GetFileSize(f) > 10.Megabytes()))
+                {
+                    _logger.Warn("Folder '{0}' contains RAR files, will require manual cleanup", releaseFolder);
+                    continue;
+                }
+
                 _logger.Info("Deleting folder '{0}' from manual import as it no longer contains video files", releaseFolder);
                 _diskProvider.DeleteFolder(releaseFolder, true);
             }

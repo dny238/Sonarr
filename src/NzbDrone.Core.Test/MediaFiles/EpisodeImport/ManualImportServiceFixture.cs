@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using Moq;
 using NUnit.Framework;
 using NzbDrone.Common.Disk;
+using NzbDrone.Common.Extensions;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.TrackedDownloads;
 using NzbDrone.Core.Exceptions;
@@ -143,6 +144,45 @@ namespace NzbDrone.Core.Test.MediaFiles.EpisodeImport
             Mocker.GetMock<IDiskProvider>().Verify(v => v.DeleteFile(_videoFile), Times.Once());
             Mocker.GetMock<IDiskProvider>().Verify(v => v.DeleteFolder(It.IsAny<string>(), It.IsAny<bool>()), Times.Never());
             Mocker.GetMock<IDiskProvider>().Verify(v => v.RemoveEmptySubfolders(_releaseFolder), Times.Once());
+        }
+
+        [Test]
+        public void should_not_delete_release_folder_when_large_rar_files_remain()
+        {
+            var rarFile = @"C:\Test\Downloads\Series.Title.S01E01.720p.HDTV-Sonarr\release.rar".AsOsAgnostic();
+
+            Mocker.GetMock<IDiskProvider>()
+                  .Setup(s => s.GetFiles(_releaseFolder, true))
+                  .Returns(new[] { rarFile });
+
+            Mocker.GetMock<IDiskProvider>()
+                  .Setup(s => s.GetFileSize(rarFile))
+                  .Returns(50.Megabytes());
+
+            Subject.DeleteFiles(_rootFolder, null, new List<string> { _videoFile }, true);
+
+            Mocker.GetMock<IDiskProvider>().Verify(v => v.DeleteFile(_videoFile), Times.Once());
+            Mocker.GetMock<IDiskProvider>().Verify(v => v.DeleteFolder(It.IsAny<string>(), It.IsAny<bool>()), Times.Never());
+
+            ExceptionVerification.ExpectedWarns(1);
+        }
+
+        [Test]
+        public void should_delete_release_folder_when_only_small_rar_files_remain()
+        {
+            var rarFile = @"C:\Test\Downloads\Series.Title.S01E01.720p.HDTV-Sonarr\subs.rar".AsOsAgnostic();
+
+            Mocker.GetMock<IDiskProvider>()
+                  .Setup(s => s.GetFiles(_releaseFolder, true))
+                  .Returns(new[] { rarFile });
+
+            Mocker.GetMock<IDiskProvider>()
+                  .Setup(s => s.GetFileSize(rarFile))
+                  .Returns(1.Megabytes());
+
+            Subject.DeleteFiles(_rootFolder, null, new List<string> { _videoFile }, true);
+
+            Mocker.GetMock<IDiskProvider>().Verify(v => v.DeleteFolder(_releaseFolder, true), Times.Once());
         }
 
         [Test]

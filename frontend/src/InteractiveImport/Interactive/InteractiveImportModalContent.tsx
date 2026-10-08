@@ -305,7 +305,7 @@ function InteractiveImportModalContentInner(
     useState(false);
   const [isConfirmDeleteFilesModalOpen, setIsConfirmDeleteFilesModalOpen] =
     useState(false);
-  const [deleteReleaseFolders, setDeleteReleaseFolders] = useState(false);
+  const [deleteReleaseFolders, setDeleteReleaseFolders] = useState(true);
   const [interactiveImportErrorMessage, setInteractiveImportErrorMessage] =
     useState<string | null>(null);
   const previousIsDeleting = usePrevious(isDeleting);
@@ -504,6 +504,35 @@ function InteractiveImportModalContentInner(
   const handleConfirmDeleteModalClose = useCallback(() => {
     setIsConfirmDeleteModalOpen(false);
   }, [setIsConfirmDeleteModalOpen]);
+
+  // The folders the server will remove once they no longer contain any video files
+  const foldersToDelete = useMemo(() => {
+    const result = new Set<string>();
+
+    items.forEach((item) => {
+      if (!selectedIds.includes(item.id)) {
+        return;
+      }
+
+      if (downloadIds?.length) {
+        // The download's folder is the root that relative paths are based on
+        const root = item.path
+          .slice(0, item.path.length - item.relativePath.length)
+          .replace(/[\\/]+$/, '');
+
+        result.add(root.split(/[\\/]/).pop() ?? root);
+      } else {
+        const segments = item.relativePath.split(/[\\/]/);
+
+        // Files directly in the folder being browsed don't have a folder to remove
+        if (segments.length > 1) {
+          result.add(segments[0]);
+        }
+      }
+    });
+
+    return Array.from(result).sort();
+  }, [items, selectedIds, downloadIds]);
 
   const handleDeleteFilesPress = useCallback(() => {
     setIsConfirmDeleteFilesModalOpen(true);
@@ -1191,25 +1220,48 @@ function InteractiveImportModalContentInner(
               })}
             </div>
 
-            <FormRow>
-              <FormLabel>
-                {translate('InteractiveImportDeleteReleaseFolders')}
-              </FormLabel>
+            {foldersToDelete.length ? (
+              <>
+                <FormRow>
+                  <FormLabel>
+                    {translate('InteractiveImportDeleteLeftoverFolders')}
+                  </FormLabel>
 
-              <FormInputHelpText
-                text={translate(
-                  'InteractiveImportDeleteReleaseFoldersHelpText'
-                )}
-              />
+                  <FormInputHelpText
+                    text={translate(
+                      'InteractiveImportDeleteLeftoverFoldersHelpText'
+                    )}
+                  />
 
-              <FormInput
-                type={inputTypes.CHECK}
-                name="deleteReleaseFolders"
-                value={deleteReleaseFolders}
-                kind={kinds.DANGER}
-                onChange={handleDeleteReleaseFoldersChange}
-              />
-            </FormRow>
+                  <FormInput
+                    type={inputTypes.CHECK}
+                    name="deleteReleaseFolders"
+                    value={deleteReleaseFolders}
+                    kind={kinds.DANGER}
+                    onChange={handleDeleteReleaseFoldersChange}
+                  />
+                </FormRow>
+
+                {deleteReleaseFolders ? (
+                  <ul className={styles.deleteFoldersList}>
+                    {foldersToDelete.slice(0, 10).map((folderName) => (
+                      <li key={folderName}>{folderName}</li>
+                    ))}
+
+                    {foldersToDelete.length > 10 ? (
+                      <li>
+                        {translate(
+                          'InteractiveImportDeleteLeftoverFoldersMore',
+                          {
+                            count: foldersToDelete.length - 10,
+                          }
+                        )}
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : null}
+              </>
+            ) : null}
           </>
         }
         confirmLabel={translate('Delete')}
