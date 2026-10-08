@@ -4,6 +4,10 @@ import { create } from 'zustand';
 import { SelectProvider, useSelect } from 'App/Select/SelectContext';
 import CommandNames from 'Commands/CommandNames';
 import { useExecuteCommand } from 'Commands/useCommands';
+import FormInput from 'Components/Form/FormInput';
+import FormInputHelpText from 'Components/Form/FormInputHelpText';
+import FormLabel from 'Components/Form/FormLabel';
+import FormRow from 'Components/Form/FormRow';
 import SelectInput, { SelectInputOption } from 'Components/Form/SelectInput';
 import Icon from 'Components/Icon';
 import Button from 'Components/Link/Button';
@@ -27,7 +31,13 @@ import {
   useUpdateEpisodeFiles,
 } from 'EpisodeFile/useEpisodeFiles';
 import usePrevious from 'Helpers/Hooks/usePrevious';
-import { align, icons, kinds, scrollDirections } from 'Helpers/Props';
+import {
+  align,
+  icons,
+  inputTypes,
+  kinds,
+  scrollDirections,
+} from 'Helpers/Props';
 import { SortDirection } from 'Helpers/Props/sortDirections';
 import SelectEpisodeModal from 'InteractiveImport/Episode/SelectEpisodeModal';
 import { SelectedEpisode } from 'InteractiveImport/Episode/SelectEpisodeModalContent';
@@ -49,6 +59,7 @@ import SelectReleaseTypeModal from 'InteractiveImport/ReleaseType/SelectReleaseT
 import SelectSeasonModal from 'InteractiveImport/Season/SelectSeasonModal';
 import SelectSeriesModal from 'InteractiveImport/Series/SelectSeriesModal';
 import useInteractiveImport, {
+  useDeleteInteractiveImportFiles,
   useReprocessInteractiveImportItems,
   useUpdateInteractiveImportItem,
   useUpdateInteractiveImportItems,
@@ -276,6 +287,12 @@ function InteractiveImportModalContentInner(
 
   const { updateEpisodeFiles } = useUpdateEpisodeFiles();
 
+  const { isDeletingFiles, deleteInteractiveImportFiles, deleteFilesError } =
+    useDeleteInteractiveImportFiles();
+
+  // Files that haven't been imported yet can only be deleted when browsing a folder or download
+  const showDeleteFiles = !showDelete && (!!folder || !!downloadIds?.length);
+
   const [invalidRowsSelected, setInvalidRowsSelected] = useState<number[]>([]);
   const [
     withoutEpisodeFileIdRowsSelected,
@@ -286,6 +303,9 @@ function InteractiveImportModalContentInner(
   );
   const [isConfirmDeleteModalOpen, setIsConfirmDeleteModalOpen] =
     useState(false);
+  const [isConfirmDeleteFilesModalOpen, setIsConfirmDeleteFilesModalOpen] =
+    useState(false);
+  const [deleteReleaseFolders, setDeleteReleaseFolders] = useState(false);
   const [interactiveImportErrorMessage, setInteractiveImportErrorMessage] =
     useState<string | null>(null);
   const previousIsDeleting = usePrevious(isDeleting);
@@ -484,6 +504,80 @@ function InteractiveImportModalContentInner(
   const handleConfirmDeleteModalClose = useCallback(() => {
     setIsConfirmDeleteModalOpen(false);
   }, [setIsConfirmDeleteModalOpen]);
+
+  const handleDeleteFilesPress = useCallback(() => {
+    setIsConfirmDeleteFilesModalOpen(true);
+  }, []);
+
+  const handleDeleteReleaseFoldersChange = useCallback(
+    ({ value }: CheckInputChanged) => {
+      setDeleteReleaseFolders(value);
+    },
+    []
+  );
+
+  const handleConfirmDeleteFiles = useCallback(() => {
+    setIsConfirmDeleteFilesModalOpen(false);
+    setInteractiveImportErrorMessage(null);
+
+    const selectedItems = items.filter((item) => selectedIds.includes(item.id));
+
+    if (downloadIds?.length) {
+      const pathsByDownloadId = selectedItems.reduce<Record<string, string[]>>(
+        (acc, item) => {
+          if (item.downloadId) {
+            acc[item.downloadId] = [...(acc[item.downloadId] ?? []), item.path];
+          }
+
+          return acc;
+        },
+        {}
+      );
+
+      Object.entries(pathsByDownloadId).forEach(([downloadId, paths]) => {
+        deleteInteractiveImportFiles({
+          downloadId,
+          paths,
+          deleteFolders: deleteReleaseFolders,
+        });
+      });
+    } else {
+      deleteInteractiveImportFiles({
+        folder,
+        paths: selectedItems.map((item) => item.path),
+        deleteFolders: deleteReleaseFolders,
+      });
+    }
+
+    // Deleted rows won't report themselves as valid again once they're removed
+    setInvalidRowsSelected((prev) =>
+      prev.filter((id) => !selectedIds.includes(id))
+    );
+    unselectAll();
+  }, [
+    items,
+    selectedIds,
+    downloadIds,
+    folder,
+    deleteReleaseFolders,
+    deleteInteractiveImportFiles,
+    unselectAll,
+  ]);
+
+  const handleConfirmDeleteFilesModalClose = useCallback(() => {
+    setIsConfirmDeleteFilesModalOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (deleteFilesError) {
+      setInteractiveImportErrorMessage(
+        getErrorMessage(
+          deleteFilesError,
+          translate('InteractiveImportLoadError')
+        )
+      );
+    }
+  }, [deleteFilesError]);
 
   const handleImportSelectedPress = useCallback(() => {
     const finalImportMode =
@@ -956,6 +1050,18 @@ function InteractiveImportModalContentInner(
             </SpinnerButton>
           ) : null}
 
+          {showDeleteFiles ? (
+            <SpinnerButton
+              className={styles.deleteButton}
+              kind={kinds.DANGER}
+              isSpinning={isDeletingFiles}
+              isDisabled={!selectedIds.length || isDeletingFiles}
+              onPress={handleDeleteFilesPress}
+            >
+              {translate('Delete')}
+            </SpinnerButton>
+          ) : null}
+
           {!downloadIds && showImportMode ? (
             <SelectInput
               className={styles.importMode}
@@ -1071,6 +1177,44 @@ function InteractiveImportModalContentInner(
         confirmLabel={translate('Delete')}
         onConfirm={handleConfirmDelete}
         onCancel={handleConfirmDeleteModalClose}
+      />
+
+      <ConfirmModal
+        isOpen={isConfirmDeleteFilesModalOpen}
+        kind={kinds.DANGER}
+        title={translate('DeleteFiles')}
+        message={
+          <>
+            <div>
+              {translate('InteractiveImportDeleteFilesMessageText', {
+                count: selectedIds.length,
+              })}
+            </div>
+
+            <FormRow>
+              <FormLabel>
+                {translate('InteractiveImportDeleteReleaseFolders')}
+              </FormLabel>
+
+              <FormInputHelpText
+                text={translate(
+                  'InteractiveImportDeleteReleaseFoldersHelpText'
+                )}
+              />
+
+              <FormInput
+                type={inputTypes.CHECK}
+                name="deleteReleaseFolders"
+                value={deleteReleaseFolders}
+                kind={kinds.DANGER}
+                onChange={handleDeleteReleaseFoldersChange}
+              />
+            </FormRow>
+          </>
+        }
+        confirmLabel={translate('Delete')}
+        onConfirm={handleConfirmDeleteFiles}
+        onCancel={handleConfirmDeleteFilesModalClose}
       />
     </ModalContent>
   );

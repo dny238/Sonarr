@@ -2,13 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using NLog;
+using NzbDrone.Common;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Instrumentation.Extensions;
 using NzbDrone.Core.CustomFormats;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.TrackedDownloads;
+using NzbDrone.Core.Exceptions;
 using NzbDrone.Core.Languages;
 using NzbDrone.Core.MediaFiles.EpisodeImport.Aggregation;
 using NzbDrone.Core.Messaging.Commands;
@@ -25,6 +28,7 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
         List<ManualImportItem> GetMediaFiles(int seriesId, int? seasonNumber);
         List<ManualImportItem> GetMediaFiles(string path, string downloadId, int? seriesId, bool filterExistingFiles);
         ManualImportItem ReprocessItem(string path, string downloadId, int seriesId, int? seasonNumber, List<int> episodeIds, string releaseGroup, QualityModel quality, List<Language> languages, int indexerFlags, ReleaseType releaseType);
+        void DeleteFiles(string folder, string downloadId, List<string> paths, bool deleteFolders);
     }
 
     public class ManualImportService : IExecute<ManualImportCommand>, IManualImportService
@@ -139,6 +143,105 @@ namespace NzbDrone.Core.MediaFiles.EpisodeImport.Manual
             }
 
             return ProcessFolder(path, path, downloadId, seriesId, filterExistingFiles);
+        }
+
+        public void DeleteFiles(string folder, string downloadId, List<string> paths, bool deleteFolders)
+        {
+            var rootFolder = folder;
+
+            if (downloadId.IsNotNullOrWhiteSpace())
+            {
+                var trackedDownload = _trackedDownloadService.Find(downloadId);
+
+                if (trackedDownload == null)
+                {
+                    throw new NzbDroneClientException(HttpStatusCode.NotFound, "Download not found");
+                }
+
+                rootFolder = trackedDownload.ImportItem.OutputPath.FullPath;
+            }
+
+            if (rootFolder.IsNullOrWhiteSpace())
+            {
+                throw new NzbDroneClientException(HttpStatusCode.BadRequest, "Folder or download ID must be provided");
+            }
+
+            rootFolder = Path.GetFullPath(rootFolder);
+
+            var filesToDelete = new List<string>();
+
+            // Validate every path before deleting anything so a single bad path doesn't result in a partial delete
+            foreach (var path in paths.Where(p => p.IsNotNullOrWhiteSpace()).Select(Path.GetFullPath).Distinct(PathEqualityComparer.Instance))
+            {
+                if (!rootFolder.PathEquals(path) && !rootFolder.IsParentPath(path))
+                {
+                    throw new NzbDroneClientException(HttpStatusCode.BadRequest, "'{0}' is not in '{1}'", path, rootFolder);
+                }
+
+                if (!MediaFileExtensions.Extensions.Contains(Path.GetExtension(path)))
+                {
+                    throw new NzbDroneClientException(HttpStatusCode.BadRequest, "'{0}' is not a video file", path);
+                }
+
+                filesToDelete.Add(path);
+            }
+
+            var foldersToCheck = new HashSet<string>(PathEqualityComparer.Instance);
+
+            foreach (var path in filesToDelete)
+            {
+                if (!_diskProvider.FileExists(path))
+                {
+                    _logger.Debug("File '{0}' no longer exists, skipping", path);
+                    continue;
+                }
+
+                _logger.Info("Deleting '{0}' from manual import", path);
+                _diskProvider.DeleteFile(path);
+
+                if (!deleteFolders)
+                {
+                    continue;
+                }
+
+                if (downloadId.IsNotNullOrWhiteSpace())
+                {
+                    // The download's output path is the release folder
+                    if (_diskProvider.FolderExists(rootFolder))
+                    {
+                        foldersToCheck.Add(rootFolder);
+                    }
+                }
+                else
+                {
+                    // Never remove the folder being browsed, only the release folder directly below it
+                    var relativePath = rootFolder.GetRelativePath(path);
+                    var separatorIndex = relativePath.IndexOfAny(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar });
+
+                    if (separatorIndex > 0)
+                    {
+                        foldersToCheck.Add(Path.Combine(rootFolder, relativePath.Substring(0, separatorIndex)));
+                    }
+                }
+            }
+
+            foreach (var releaseFolder in foldersToCheck)
+            {
+                if (!_diskProvider.FolderExists(releaseFolder))
+                {
+                    continue;
+                }
+
+                if (_diskScanService.GetVideoFiles(releaseFolder).Any())
+                {
+                    _logger.Debug("Folder '{0}' still contains video files, not deleting", releaseFolder);
+                    _diskProvider.RemoveEmptySubfolders(releaseFolder);
+                    continue;
+                }
+
+                _logger.Info("Deleting folder '{0}' from manual import as it no longer contains video files", releaseFolder);
+                _diskProvider.DeleteFolder(releaseFolder, true);
+            }
         }
 
         public ManualImportItem ReprocessItem(string path, string downloadId, int seriesId, int? seasonNumber, List<int> episodeIds, string releaseGroup, QualityModel quality, List<Language> languages, int indexerFlags, ReleaseType releaseType)

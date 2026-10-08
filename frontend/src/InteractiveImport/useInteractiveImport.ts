@@ -208,3 +208,42 @@ export const useReprocessInteractiveImportItems = () => {
     error,
   };
 };
+
+interface DeleteInteractiveImportFiles {
+  folder?: string;
+  downloadId?: string;
+  paths: string[];
+  deleteFolders: boolean;
+}
+
+export const useDeleteInteractiveImportFiles = () => {
+  const queryClient = useQueryClient();
+
+  const { mutate, isPending, error } = useApiMutation<
+    unknown,
+    DeleteInteractiveImportFiles
+  >({
+    path: '/manualimport',
+    method: 'DELETE',
+    mutationOptions: {
+      onSuccess: (_data, { paths }) => {
+        queryClient.setQueriesData(
+          { queryKey: ['/manualimport'] },
+          (oldData: InteractiveImport[] | undefined) => {
+            if (!oldData) {
+              return oldData;
+            }
+
+            return oldData.filter((item) => !paths.includes(item.path));
+          }
+        );
+      },
+    },
+  });
+
+  return {
+    deleteInteractiveImportFiles: mutate,
+    isDeletingFiles: isPending,
+    deleteFilesError: error,
+  };
+};
