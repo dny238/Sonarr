@@ -48,6 +48,30 @@
   width: auto;
 }
 
+.deleteFolders {
+  margin-top: 20px;
+}
+
+.deleteFoldersHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.deleteFoldersCheck {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.deleteFoldersTitle {
+  font-weight: bold;
+}
+
+.deleteFoldersHelpText {
+  margin-bottom: 10px;
+  color: var(--helpTextColor);
+}
+
 .deleteFoldersList {
   margin: 0;
   padding-left: 20px;

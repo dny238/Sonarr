@@ -4,10 +4,7 @@ import { create } from 'zustand';
 import { SelectProvider, useSelect } from 'App/Select/SelectContext';
 import CommandNames from 'Commands/CommandNames';
 import { useExecuteCommand } from 'Commands/useCommands';
-import FormInput from 'Components/Form/FormInput';
-import FormInputHelpText from 'Components/Form/FormInputHelpText';
-import FormLabel from 'Components/Form/FormLabel';
-import FormRow from 'Components/Form/FormRow';
+import CheckInput from 'Components/Form/CheckInput';
 import SelectInput, { SelectInputOption } from 'Components/Form/SelectInput';
 import Icon from 'Components/Icon';
 import Button from 'Components/Link/Button';
@@ -31,13 +28,7 @@ import {
   useUpdateEpisodeFiles,
 } from 'EpisodeFile/useEpisodeFiles';
 import usePrevious from 'Helpers/Hooks/usePrevious';
-import {
-  align,
-  icons,
-  inputTypes,
-  kinds,
-  scrollDirections,
-} from 'Helpers/Props';
+import { align, icons, kinds, scrollDirections, sizes } from 'Helpers/Props';
 import { SortDirection } from 'Helpers/Props/sortDirections';
 import SelectEpisodeModal from 'InteractiveImport/Episode/SelectEpisodeModal';
 import { SelectedEpisode } from 'InteractiveImport/Episode/SelectEpisodeModalContent';
@@ -1211,6 +1202,7 @@ function InteractiveImportModalContentInner(
       <ConfirmModal
         isOpen={isConfirmDeleteFilesModalOpen}
         kind={kinds.DANGER}
+        size={sizes.LARGE}
         title={translate('DeleteFiles')}
         message={
           <>
@@ -1221,26 +1213,27 @@ function InteractiveImportModalContentInner(
             </div>
 
             {foldersToDelete.length ? (
-              <>
-                <FormRow>
-                  <FormLabel>
-                    {translate('InteractiveImportDeleteLeftoverFolders')}
-                  </FormLabel>
-
-                  <FormInputHelpText
-                    text={translate(
-                      'InteractiveImportDeleteLeftoverFoldersHelpText'
-                    )}
-                  />
-
-                  <FormInput
-                    type={inputTypes.CHECK}
+              <div className={styles.deleteFolders}>
+                <div className={styles.deleteFoldersHeader}>
+                  <CheckInput
+                    containerClassName={styles.deleteFoldersCheck}
                     name="deleteReleaseFolders"
                     value={deleteReleaseFolders}
                     kind={kinds.DANGER}
+                    ariaLabel={translate(
+                      'InteractiveImportDeleteLeftoverFolders'
+                    )}
                     onChange={handleDeleteReleaseFoldersChange}
                   />
-                </FormRow>
+
+                  <span className={styles.deleteFoldersTitle}>
+                    {translate('InteractiveImportDeleteLeftoverFolders')}
+                  </span>
+                </div>
+
+                <div className={styles.deleteFoldersHelpText}>
+                  {translate('InteractiveImportDeleteLeftoverFoldersHelpText')}
+                </div>
 
                 {deleteReleaseFolders ? (
                   <ul className={styles.deleteFoldersList}>
@@ -1260,7 +1253,7 @@ function InteractiveImportModalContentInner(
                     ) : null}
                   </ul>
                 ) : null}
-              </>
+              </div>
             ) : null}
           </>
         }
