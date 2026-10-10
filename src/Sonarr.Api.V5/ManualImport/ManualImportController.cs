@@ -100,6 +100,20 @@ public class ManualImportController : Controller
         return TypedResults.Ok(updatedItems.ToResource());
     }
 
+    [HttpDelete]
+    [Consumes("application/json")]
+    public NoContent DeleteFiles([FromBody] ManualImportDeleteResource resource)
+    {
+        if (resource.Paths is { Count: 0 })
+        {
+            throw new BadRequestException("paths must be provided");
+        }
+
+        _manualImportService.DeleteFiles(resource.Folder, resource.DownloadId, resource.Paths, resource.DeleteFolders);
+
+        return TypedResults.NoContent();
+    }
+
     private ManualImportResource AddQualityWeight(ManualImportResource item)
     {
         if (item.Quality != null)
