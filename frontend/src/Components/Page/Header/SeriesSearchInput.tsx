@@ -201,8 +201,10 @@ function SeriesSearchInput() {
     inputRef.current?.focus();
   }, []);
 
-  const getSectionSuggestions = useCallback((section: Section) => {
-    return section.suggestions;
+  // The highlighted section can briefly point past the end of the list when the
+  // existing series section is removed, such as when selecting "Search for" by touch
+  const getSectionSuggestions = useCallback((section?: Section) => {
+    return section?.suggestions ?? [];
   }, []);
 
   const renderSectionTitle = useCallback((section: Section) => {
